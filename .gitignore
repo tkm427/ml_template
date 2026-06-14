@@ -1,7 +1,6 @@
 data/raw/
 data/processed/
-mlruns/
-mlartifacts/
+wandb/
 outputs/
 .env
 __pycache__/

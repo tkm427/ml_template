@@ -1,7 +1,6 @@
 data/
 outputs/
-mlruns/
-mlartifacts/
+wandb/
 .venv/
 __pycache__/
 **/__pycache__/

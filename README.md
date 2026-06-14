@@ -1,6 +1,6 @@
 # Kaggle Competition Project
 
-DockerとMLflowを用いたKaggleコンペ用ローカル環境。
+DockerとW&Bを用いたKaggleコンペ用ローカル環境。
 
 ## 技術スタック
 
@@ -9,7 +9,7 @@ DockerとMLflowを用いたKaggleコンペ用ローカル環境。
 | [gcr.io/kaggle-gpu-images/python](https://github.com/Kaggle/docker-python) | ベースイメージ（GPU・主要ライブラリ同梱） |
 | [Docker Compose](https://docs.docker.com/compose/) | コンテナ管理 |
 | [uv](https://github.com/astral-sh/uv) | Pythonパッケージ・バージョン管理 |
-| [MLflow](https://mlflow.org/) | 実験管理 |
+| [Weights & Biases](https://wandb.ai/) | 実験管理 |
 | [Tailscale](https://tailscale.com/) | リモートアクセス（VPN） |
 
 ## ディレクトリ構成
@@ -25,14 +25,13 @@ kaggle_project/
 │   ├── dataset.py
 │   ├── model.py
 │   ├── train.py
-│   └── utils/mlflow_utils.py  # MLflowヘルパー
+│   └── utils/wandb_utils.py  # W&Bヘルパー
 ├── scripts/
 │   ├── train.py               # 学習エントリポイント（Hydra）
 │   ├── make_submission.py     # 推論 + submission.csv 生成
 │   └── analyze_*.py           # 分析スクリプト（再利用可能）
 ├── notebooks/                 # EDA・可視化のみ（本番コード禁止）
-├── mlruns/                 # MLflow実験ログ（Git管理外）
-├── mlartifacts/            # MLflowアーティファクト（Git管理外）                
+├── wandb/                  # W&B実験ログ（Git管理外）
 ├── data/
 │   ├── raw/                   # Kaggle 生データ（Git 管理外）
 │   └── processed/             # 前処理済みデータ（Git 管理外）
@@ -66,8 +65,9 @@ cd kaggle-project
 
 ### 2. 環境変数の設定
 
-`.env` を作成し、Kaggle APIキーを設定する。
-APIキーは [Kaggle Account Settings](https://www.kaggle.com/settings/account) から取得できる。
+`.env` を作成し、Kaggle APIキーと W&B APIキーを設定する。
+Kaggle APIキーは [Kaggle Account Settings](https://www.kaggle.com/settings/account) から、
+W&B APIキーは [W&B Authorize](https://wandb.ai/authorize) から取得できる。
 
 ```bash
 cp .env.example .env
@@ -76,6 +76,7 @@ cp .env.example .env
 ```env
 KAGGLE_USERNAME=your_username
 KAGGLE_KEY=your_api_key
+WANDB_API_KEY=your_wandb_api_key
 ```
 
 ### 3. lockfileの生成
@@ -98,7 +99,7 @@ docker compose up --build -d
 | サービス | URL |
 |---|---|
 | Jupyter Lab | http://localhost:8888 |
-| MLflow UI | http://localhost:5000 |
+| W&B ダッシュボード | https://wandb.ai/\<entity\>/\<project\> |
 
 ## データのダウンロード
 
@@ -148,15 +149,15 @@ Epoch 010/030 | train_loss: 0.1234 | val_loss: 0.1100 | val_auc: 0.9500
 - Optimizer / Scheduler の状態（学習率スケジュールが正確に再現される）
 - 完了済みエポック番号
 - ベスト val AUC
-- MLflow の Run ID（同じ Run にメトリクスが続けて記録される）
+- W&B の Run ID（同じ Run にメトリクスが続けて記録される）
 
 ### 再開する
 
-**同じ `mlflow.run_name` で再実行するだけ**。チェックポイントが自動検出されて続きから始まる。
+**同じ `wandb.run_name` で再実行するだけ**。チェックポイントが自動検出されて続きから始まる。
 
 ```bash
 docker compose exec workspace python scripts/train.py \
-  mlflow.run_name=20260518_effnet_b0_specaugment fold=0
+  wandb.run_name=20260518_effnet_b0_specaugment fold=0
 # → Resume: epoch 10 から再開 (best_auc=0.9500) と表示される
 ```
 
@@ -167,36 +168,38 @@ docker compose exec workspace python scripts/train.py \
 ```bash
 rm outputs/resume_20260518_effnet_b0_specaugment_fold0.ckpt
 docker compose exec workspace python scripts/train.py \
-  mlflow.run_name=20260518_effnet_b0_specaugment fold=0
+  wandb.run_name=20260518_effnet_b0_specaugment fold=0
 ```
 
 > チェックポイントのファイル名形式: `outputs/resume_{run_name}_fold{N}.ckpt`
 
 ---
 
-## 実験管理（MLflow）
+## 実験管理（W&B）
 
-`src/utils/mlflow_utils.py` のヘルパーを使って実験をログする。
+`src/utils/wandb_utils.py` のヘルパーを使って実験をログする。
 
 ```python
-from src.utils.mlflow_utils import start_run, log_cv_results
+from src.utils.wandb_utils import start_run, log_cv_results
 
-with start_run(experiment_name="my-competition", run_name="lgbm-baseline"):
-    mlflow.log_params({"n_estimators": 1000, "learning_rate": 0.05})
+with start_run(project="my-competition", run_name="lgbm-baseline"):
+    wandb.config.update({"n_estimators": 1000, "learning_rate": 0.05})
 
     scores = cross_validate(model, X, y)
     log_cv_results(scores)
 
-    mlflow.log_artifact("outputs/submission.csv")
+    artifact = wandb.Artifact("submission", type="submission")
+    artifact.add_file("outputs/submission.csv")
+    wandb.log_artifact(artifact)
 ```
 
-実験結果はMLflow UIで確認できる → http://localhost:5000
+実験結果はW&Bのダッシュボードで確認できる → https://wandb.ai/\<entity\>/\<project\>
 
 ## .gitignore の対象
 
 以下はGit管理外とする。
 
 - `data/raw/`, `data/processed/` : データファイル
-- `mlruns/`, `mlartifacts/` : 実験ログ
+- `wandb/` : 実験ログ
 - `outputs/` : 予測結果
 - `.env` : APIキー

@@ -8,41 +8,11 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - KAGGLE_USERNAME=${KAGGLE_USERNAME}
       - KAGGLE_KEY=${KAGGLE_KEY}
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - WANDB_API_KEY=${WANDB_API_KEY}
     volumes:
       - .:/workspace
       - ./data:/workspace/data
-      - ./mlartifacts:/mlartifacts
     shm_size: '4gb'          # DataLoader マルチプロセス用の共有メモリ
     ports:
       - "8888:8888"          # Jupyter
-    depends_on:
-      - mlflow
     command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
-    networks:
-      - kaggle-net
-
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    container_name: kaggle-mlflow
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./mlruns:/mlruns
-      - ./mlartifacts:/mlartifacts
-    environment:
-      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlruns/mlflow.db
-      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlartifacts
-    command: >
-      mlflow server
-      --backend-store-uri sqlite:///mlruns/mlflow.db
-      --default-artifact-root /mlartifacts
-      --host 0.0.0.0
-      --port 5000
-      --allowed-hosts "*"
-    networks:
-      - kaggle-net
-
-networks:
-  kaggle-net:
-    driver: bridge

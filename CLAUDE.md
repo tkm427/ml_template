@@ -71,14 +71,13 @@ kaggle_project/
 │   ├── dataset.py
 │   ├── model.py
 │   ├── train.py
-│   └── utils/mlflow_utils.py  # MLflowヘルパー
+│   └── utils/wandb_utils.py  # W&Bヘルパー
 ├── scripts/
 │   ├── train.py               # 学習エントリポイント（Hydra）
 │   ├── make_submission.py     # 推論 + submission.csv 生成
 │   └── analyze_*.py           # 分析スクリプト（再利用可能）
 ├── notebooks/                 # EDA・可視化のみ（本番コード禁止）
-├── mlruns/                 # MLflow実験ログ（Git管理外）
-├── mlartifacts/            # MLflowアーティファクト（Git管理外）                
+├── wandb/                  # W&B実験ログ（Git管理外）
 ├── data/
 │   ├── raw/                   # Kaggle 生データ（Git 管理外）
 │   └── processed/             # 前処理済みデータ（Git 管理外）
@@ -155,7 +154,7 @@ SpecAugment で稀少クラスの AUC が上がるはず。
 ## 設定
 - 親 config: `conf/config.yaml`
 - 変更: `train.augment.spec_mask=true train.augment.mask_width=20`
-- MLflow Run: `20260513_effnet_b0_specaug20`
+- W&B Run: `20260513_effnet_b0_specaug20`
 
 ## 実際の結果
 - 全体: -0.003 / 稀少: -0.01 / 頻出: -0.005
@@ -250,7 +249,7 @@ docker compose logs -f                                        # ログ確認
 | サービス | URL |
 |---|---|
 | JupyterLab | http://localhost:8888 |
-| MLflow UI  | http://localhost:5000 |
+| W&B ダッシュボード | https://wandb.ai/\<entity\>/\<project\> |
 
 学習の実行はユーザーが行う。コマンドを出力すること。
 
@@ -261,7 +260,7 @@ docker compose logs -f                                        # ログ確認
 すべての実験パラメータは `conf/` 以下の YAML で管理する。ファイルを書き換えず、CLI オーバーライドで変更する。
 
 ```bash
-python scripts/train.py model=effnet_b2 train.lr=5e-4 mlflow.run_name=20260513_effnet_b2_lr5e4
+python scripts/train.py model=effnet_b2 train.lr=5e-4 wandb.run_name=20260513_effnet_b2_lr5e4
 ```
 
 `conf/config.yaml` の基本構成:
@@ -273,8 +272,8 @@ defaults:
   - train: default
   - _self_
 
-mlflow:
-  experiment: baseline
+wandb:
+  project: baseline
   run_name: ???  # 実行時に必ず指定
 ```
 
@@ -282,13 +281,13 @@ mlflow:
 
 ---
 
-## 実験管理（MLflow）
+## 実験管理（W&B）
 
 ### 命名規則
 
 | 種別 | 形式 | 例 |
 |---|---|---|
-| Experiment | `{phase}` | `baseline`, `augmentation`, `model_search`, `cpu_opt` |
+| Project | `{phase}` | `baseline`, `augmentation`, `model_search`, `cpu_opt` |
 | Run | `YYYYMMDD_{model}_{変更点}` | `20260513_effnet_b0_baseline` |
 
 phase の選択肢: `baseline` / `augmentation` / `model_search` / `pseudo_label` / `cpu_opt` / `ensemble` / `final`
@@ -296,14 +295,23 @@ phase の選択肢: `baseline` / `augmentation` / `model_search` / `pseudo_label
 ### 必須ログ項目
 
 ```python
-mlflow.log_params(OmegaConf.to_container(cfg, resolve=True))
-mlflow.log_metric("val_score",        val_score,        step=epoch)
-mlflow.log_metric("val_score_rare",   val_score_rare,   step=epoch)  # 稀少カテゴリ
-mlflow.log_metric("val_score_common", val_score_common, step=epoch)  # 頻出カテゴリ
-mlflow.log_metric("val_loss",         val_loss,         step=epoch)
-mlflow.log_metric("train_loss",       train_loss,      step=epoch)
-mlflow.log_artifact("outputs/best_model.pth")
-mlflow.log_artifact("outputs/submission.csv")
+wandb.init(
+    project=cfg.wandb.project,
+    name=cfg.wandb.run_name,
+    config=OmegaConf.to_container(cfg, resolve=True),
+)
+wandb.log({
+    "val_score": val_score,                # 全体
+    "val_score_rare": val_score_rare,      # 稀少カテゴリ
+    "val_score_common": val_score_common,  # 頻出カテゴリ
+    "val_loss": val_loss,
+    "train_loss": train_loss,
+}, step=epoch)
+wandb.save("outputs/best_model.pth")
+
+artifact = wandb.Artifact("submission", type="submission")
+artifact.add_file("outputs/submission.csv")
+wandb.log_artifact(artifact)
 ```
 
 `val_score_rare` / `val_score_common` の分け方はコンペごとに定義し、`competition_overview.md` に記録する。
