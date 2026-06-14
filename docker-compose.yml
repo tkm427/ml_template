@@ -12,6 +12,8 @@ services:
     volumes:
       - .:/workspace
       - ./data:/workspace/data
+      - ./mlartifacts:/mlartifacts
+    shm_size: '4gb'          # DataLoader マルチプロセス用の共有メモリ
     ports:
       - "8888:8888"          # Jupyter
     depends_on:

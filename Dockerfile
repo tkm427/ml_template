@@ -10,5 +10,8 @@ ENV UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock* ./
 
 # --no-install-project: プロジェクト自体をビルドせず依存だけ入れる
-RUN uv sync --frozen --no-install-project
+# UV_SYSTEM_PYTHON=1 でシステム Python へインストール
+RUN uv pip install --system -r pyproject.toml || \
+    pip install hydra-core omegaconf mlflow scikit-learn
+
 COPY . .

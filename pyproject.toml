@@ -13,7 +13,7 @@ dependencies = [
     "hydra-core>=1.3.0",
 ]
 
-# ↓ 非推奨の [tool.uv.dev-dependencies] から変更
+
 [dependency-groups]
 dev = [
     "jupyter>=1.0.0",

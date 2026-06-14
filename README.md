@@ -15,35 +15,44 @@ DockerとMLflowを用いたKaggleコンペ用ローカル環境。
 ## ディレクトリ構成
 
 ```
-kaggle-project/
-├── docker-compose.yml
-├── Dockerfile
-├── .env                    # Kaggle API Key（Git管理外）
-├── .gitignore
-├── pyproject.toml          # uv依存管理
-├── uv.lock
-├── README.md
-│
-├── data/
-│   ├── raw/                # Kaggleからダウンロードした生データ（Git管理外）
-│   ├── processed/          # 前処理済みデータ（Git管理外）
-│   └── external/           # 外部データ
-│
-├── notebooks/              # 探索・分析用Jupyter Notebook
-│
+kaggle_project/
+├── conf/
+│   ├── config.yaml
+│   ├── model/
+│   ├── data/
+│   └── train/
 ├── src/
-│   ├── config.py           # 設定・定数
-│   ├── features/           # 特徴量エンジニアリング
-│   ├── models/             # 学習・推論
-│   └── utils/
-│       └── mlflow_utils.py # MLflowヘルパー
-│
+│   ├── dataset.py
+│   ├── model.py
+│   ├── train.py
+│   └── utils/mlflow_utils.py  # MLflowヘルパー
+├── scripts/
+│   ├── train.py               # 学習エントリポイント（Hydra）
+│   ├── make_submission.py     # 推論 + submission.csv 生成
+│   └── analyze_*.py           # 分析スクリプト（再利用可能）
+├── notebooks/                 # EDA・可視化のみ（本番コード禁止）
 ├── mlruns/                 # MLflow実験ログ（Git管理外）
-├── mlartifacts/            # MLflowアーティファクト（Git管理外）
-├── outputs/                # 予測結果・submission
-└── scripts/
-    ├── download_data.sh
-    └── run_train.sh
+├── mlartifacts/            # MLflowアーティファクト（Git管理外）                
+├── data/
+│   ├── raw/                   # Kaggle 生データ（Git 管理外）
+│   └── processed/             # 前処理済みデータ（Git 管理外）
+├── docs/
+│   └── {competition}/
+│       ├── competition_overview.md   # コンペ仕様（静的）
+│       ├── strategy.md               # 戦略・時間配分・週次ふりかえり
+│       ├── experiments.md            # 実験インデックス・現在のフォーカス
+│       ├── experiments/              # 1 実験 1 ファイル
+│       │   └── exp001_baseline.md
+│       ├── eda/                      # データ理解の発見
+│       │   └── class_distribution.md
+│       ├── research/                 # 競合・先行研究の調査
+│       │   ├── past_solutions.md
+│       │   ├── discussions.md
+│       │   ├── public_notebooks.md
+│       │   └── papers.md
+│       └── postmortems/              # 重要な失敗の深掘り
+│           └── pm001_aug_failed.md
+└── outputs/                   # チェックポイント・submission（Git 管理外）
 ```
 
 ## セットアップ
@@ -120,6 +129,51 @@ git add uv.lock pyproject.toml
 docker compose up --build -d
 ```
 
+## 学習の中断・再開
+
+学習には時間がかかるため、任意のタイミングで中断し、あとから続きを再開できる。
+
+### 中断する
+
+学習中に `Ctrl+C` を押すと、その直前のエポックのチェックポイントが保存されて終了する。
+
+```
+Epoch 010/030 | train_loss: 0.1234 | val_loss: 0.1100 | val_auc: 0.9500
+^C
+中断しました。outputs/resume_20260518_effnet_b0_specaugment_fold0.ckpt から再開できます。
+```
+
+チェックポイントには以下が保存される:
+- モデルの重み
+- Optimizer / Scheduler の状態（学習率スケジュールが正確に再現される）
+- 完了済みエポック番号
+- ベスト val AUC
+- MLflow の Run ID（同じ Run にメトリクスが続けて記録される）
+
+### 再開する
+
+**同じ `mlflow.run_name` で再実行するだけ**。チェックポイントが自動検出されて続きから始まる。
+
+```bash
+docker compose exec workspace python scripts/train.py \
+  mlflow.run_name=20260518_effnet_b0_specaugment fold=0
+# → Resume: epoch 10 から再開 (best_auc=0.9500) と表示される
+```
+
+### 最初からやり直す
+
+チェックポイントファイルを削除してから実行する。
+
+```bash
+rm outputs/resume_20260518_effnet_b0_specaugment_fold0.ckpt
+docker compose exec workspace python scripts/train.py \
+  mlflow.run_name=20260518_effnet_b0_specaugment fold=0
+```
+
+> チェックポイントのファイル名形式: `outputs/resume_{run_name}_fold{N}.ckpt`
+
+---
+
 ## 実験管理（MLflow）
 
 `src/utils/mlflow_utils.py` のヘルパーを使って実験をログする。
@@ -137,36 +191,6 @@ with start_run(experiment_name="my-competition", run_name="lgbm-baseline"):
 ```
 
 実験結果はMLflow UIで確認できる → http://localhost:5000
-
-## リモートアクセス（Tailscale）
-
-WSLなどリモートマシン上で環境を動かす場合、TailscaleのIPでアクセスする。
-
-```bash
-# WSL側でTailscale IPを確認
-tailscale ip -4
-```
-
-| サービス | URL |
-|---|---|
-| Jupyter Lab | http://\<Tailscale-IP\>:8888 |
-| MLflow UI | http://\<Tailscale-IP\>:5000 |
-
-## コンテナの操作
-
-```bash
-# 起動
-docker compose up -d
-
-# 停止
-docker compose down
-
-# ログ確認
-docker compose logs -f
-
-# コンテナに入る
-docker compose exec workspace bash
-```
 
 ## .gitignore の対象
 
